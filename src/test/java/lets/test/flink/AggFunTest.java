@@ -4,7 +4,6 @@ import org.apache.flink.table.api.DataTypes;
 import org.apache.flink.table.api.EnvironmentSettings;
 import org.apache.flink.table.api.Table;
 import org.apache.flink.table.api.TableEnvironment;
-import org.apache.flink.table.planner.functions.aggfunctions.MaxWithRetractAggFunction;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
@@ -20,14 +19,14 @@ public class AggFunTest {
     @ValueSource(strings = {"", "TEMPORARY", "TEMPORARY SYSTEM"})
     public void testWithCreateFunction(String functionType) {
         initInput();
+        tableEnv.dropFunction("a");
 
-        String functionClass = "org.apache.flink.table.planner.functions.aggfunctions.MaxWithRetractAggFunction$DoubleMaxWithRetractAggFunction";
-
+        String functionClass = "lets.test.flink.CustomJavaUserDefinedAggFunctions$WeightedAvg";
         String createFunQuery = String.format("CREATE %s FUNCTION a AS '%s'", functionType, functionClass);
         tableEnv.executeSql(createFunQuery);
         tableEnv.createTemporaryView("B", tableEnv.from("A")
                 .groupBy($("symbol"))
-                .select($("symbol"), call("a", $("price")))
+                .select($("symbol"), call("a", $("price").cast(DataTypes.INT()), 12))
         );
 
         Table res = tableEnv.from("B");
@@ -36,12 +35,15 @@ public class AggFunTest {
     }
 
     @Test
-    public void testWithRegisterFunction() {
+    public void testWithRegisterFunction() throws ClassNotFoundException {
         initInput();
 
-        tableEnv.createTemporarySystemFunction("max_value", MaxWithRetractAggFunction.DoubleMaxWithRetractAggFunction.class);
+        String functionClass = "lets.test.flink.CustomJavaUserDefinedAggFunctions$WeightedAvg";
+        Class.forName(functionClass);
+        String createFunQuery = String.format("CREATE TEMPORARY FUNCTION a AS '%s'", functionClass);
+        tableEnv.executeSql(createFunQuery);
 
-        Table res = tableEnv.sqlQuery("select max_value(price) as max_price from A group by symbol");
+        Table res = tableEnv.sqlQuery("select a(CAST(price AS INT), 12) as max_price from A group by symbol");
 
         res.execute().print();
     }
